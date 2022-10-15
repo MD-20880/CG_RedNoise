@@ -127,10 +127,9 @@ void drawTexturedLine(CanvasPoint from, CanvasPoint to, TextureMap texture, glm:
 	for (int i = 0; i < step; i++){
 		float x = from.x+( xStepSize * i );
 		float y = from.y + ( yStepSize * i );
-		glm::vec3 p = transfer * glm::vec3(x,y,1);
+		glm::vec3 p = glm::vec3(x,y,1)*transfer ;
 		TexturePoint point(p.x,p.y);
-		uint32_t c = texture.pixels[int(p.y)*texture.width-1+int(p.x)];
-		std::cout << "color at position " << p.x << " " << p.y << " is: "<< c << std::endl;
+		uint32_t c = texture.pixels[int(p.y)*texture.width+int(p.x)];
 		window.setPixelColour(round(x),round(y),c);
 	}
 }
@@ -190,10 +189,8 @@ void drawFilledTriangle(CanvasTriangle triangle, CanvasTriangle texture, Drawing
 	split.texturePoint = texturePoint;
 	drawFlatFilledTriangle(middle,split,top,tmap,transfer,window);
 	drawFlatFilledTriangle(middle,split,bottom,tmap,transfer,window);
+	
 }
-
-
-
 
 
 void drawgray(DrawingWindow &window) {
@@ -284,11 +281,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 				CanvasPoint(395,380),
 				CanvasPoint(65,330)
 			);
-
-			glm::mat3x3 matrix =  transferFunction(triangle,texture);
-			glm::vec3 testvec(160,10,1);
-			glm::vec3 result = testvec*matrix;
-			std::cout << result.x << " " << result.y<< std::endl;
 
 			drawFilledTriangle(triangle,texture,window);
 			}
