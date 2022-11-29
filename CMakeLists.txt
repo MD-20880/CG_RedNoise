@@ -24,6 +24,7 @@ find_package(SDL2 REQUIRED)
 
 include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
 include_directories(libs/sdw)
+include_directories(src/)
 
 add_executable(RedNoise
         libs/sdw/CanvasPoint.cpp
