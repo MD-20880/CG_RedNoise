@@ -12,8 +12,10 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <unordered_map>
 #include "RayTriangleIntersection.h"
 #include <glm/gtx/string_cast.hpp>
+#include <glm/gtx/hash.hpp>
 
 #define WIDTH 320
 #define HEIGHT 240
@@ -70,8 +72,14 @@ void calculateNormal(std::vector<ModelTriangle> &list){
 }
 
 //calculate the map<point,std::vector<ModelTriangle>> which keys represent the point and the value is the list of ModelTriangle that containing that point
-std::map<glm::vec3,std::vector<ModelTriangle>> calculateVertexTriangleMap(std::vector<ModelTriangle> triangles){
-
+std::unordered_map<glm::vec3,std::vector<ModelTriangle>> calculateVertexTriangleMap(std::vector<ModelTriangle> triangles){
+	std::unordered_map<glm::vec3,std::vector<ModelTriangle>> vertexMap; 
+	for (ModelTriangle triangle : triangles){
+		for (glm::vec3 vertex : triangle.vertices){
+			vertexMap[vertex].push_back(triangle);
+		}
+	}
+	return vertexMap;
 }
 
 std::vector<float> interpolateSingleFloats(float start, float end, int steps) {
@@ -558,8 +566,14 @@ void drawWireFrameCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x
 	}
 }
 
+glm::vec3 pointNormal(RayTriangleIntersection intersection, std::unordered_map<glm::vec3,std::vector<ModelTriangle>> vertexMap){
+	std::vector<glm::vec3> vertexNormals;
 
-void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList){
+}	
+
+
+void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList,
+								std::unordered_map<glm::vec3,std::vector<ModelTriangle>> vertexMap){
 	for( int y = 0 ; y < HEIGHT; y++){
 		for ( int x = 0; x < WIDTH; x++){
 			//Send Ray
@@ -569,13 +583,13 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 			//If hit
 			if (camintersect.triangleIndex != -1){
 				Colour original = camintersect.intersectedTriangle.colour;
+				glm::vec3 pNormal = pointNormal(camintersect,vertexMap);
 				float ambient = 0.0;
 				float lightIntensity = 0.0;
 				float diffuseIntensity = 0.0;
 				float specularIntensity = 0.0;
 				float visibility = 1.0;
 				for(int i = 0; i < lightList.size(); i++){
-
 					glm::vec3 lights = lightList[i];
 					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
 					if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.01)){
@@ -703,6 +717,7 @@ int main(int argc, char *argv[]) {
 	std::vector<ModelTriangle> list = readObj("src/ball.obj",mtl,0.5);
 
 	calculateNormal(list);
+	auto vertexMap = calculateVertexTriangleMap(list);
 	state = 0x02;
 	// for (size_t i = 0; i < list.size(); i++){
 
