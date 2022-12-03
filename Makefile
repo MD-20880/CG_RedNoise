@@ -13,11 +13,12 @@ SDW_OBJECT_FILES := $(patsubst $(SDW_DIR)%.cpp, $(BUILD_DIR)/%.o, $(SDW_SOURCE_F
 
 # Build settings
 COMPILER := clang++
-COMPILER_OPTIONS := -c -pipe -Wall -std=c++11 # If you have an older compiler, you might have to use -std=c++0x
+COMPILER_OPTIONS := -c -pipe -Wall -std=c++11# If you have an older compiler, you might have to use -std=c++0x
 DEBUG_OPTIONS := -ggdb -g3
 FUSSY_OPTIONS := -Werror -pedantic
 SANITIZER_OPTIONS := -O1 -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer
 SPEEDY_OPTIONS := -Ofast -funsafe-math-optimizations -march=native
+DEBUG_SPEEDY_OPTIONS := -Ofast -funsafe-math-optimizations -march=native -DDEBUG=0
 LINKER_OPTIONS :=
 
 # Set up flags
@@ -51,6 +52,14 @@ speedy: $(SDW_OBJECT_FILES)
 	$(COMPILER) $(COMPILER_OPTIONS) $(SPEEDY_OPTIONS) -o $(OBJECT_FILE) $(SOURCE_FILE) $(SDL_COMPILER_FLAGS) $(SDW_COMPILER_FLAGS) $(GLM_COMPILER_FLAGS)
 	$(COMPILER) $(LINKER_OPTIONS) $(SPEEDY_OPTIONS) -o $(EXECUTABLE) $(OBJECT_FILE) $(SDW_LINKER_FLAGS) $(SDL_LINKER_FLAGS)
 	./$(EXECUTABLE)
+
+
+# Rule to build for high performance executable (for manually testing interaction)
+dspeedy: $(SDW_OBJECT_FILES)
+	$(COMPILER) $(COMPILER_OPTIONS) $(DEBUG_SPEEDY_OPTIONS) -o $(OBJECT_FILE) $(SOURCE_FILE) $(SDL_COMPILER_FLAGS) $(SDW_COMPILER_FLAGS) $(GLM_COMPILER_FLAGS)
+	$(COMPILER) $(LINKER_OPTIONS) $(SPEEDY_OPTIONS) -o $(EXECUTABLE) $(OBJECT_FILE) $(SDW_LINKER_FLAGS) $(SDL_LINKER_FLAGS)
+	./$(EXECUTABLE)
+
 
 # Rule to compile and link for final production release
 production: $(SDW_OBJECT_FILES)

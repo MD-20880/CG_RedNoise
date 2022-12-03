@@ -12,3 +12,5 @@ std::ostream &operator<<(std::ostream &os, const ModelTriangle &triangle) {
 	os << "(" << triangle.vertices[2].x << ", " << triangle.vertices[2].y << ", " << triangle.vertices[2].z << ")\n";
 	return os;
 }
+
+
