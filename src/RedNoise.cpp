@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include "RayTriangleIntersection.h"
 #include <glm/gtx/string_cast.hpp>
@@ -39,12 +40,6 @@ struct Light {
 Light::Light() = default;
 
 
-
-
-// SHADE MODES: 
-// 0 ----- Normal Shading
-// 1 ----- Guaud Shading
-// 2 ----- Phone Shading
 
 
 bool doRotation = 0;
@@ -89,6 +84,7 @@ std::vector<std::vector<float>> dbuffer = makedBuffer();
 //PixelBuffer that Could be Updated before running
 std::vector<std::vector<uint32_t>> pbuffer = makepBuffer();
 glm::vec3 campos(0,0,4);
+glm::mat3 camrot(1,0,0,0,-1,0,0,0,1);
 uint8_t state = 0x01;
 
 
@@ -620,12 +616,13 @@ glm::vec3 pointNormal(RayTriangleIntersection intersection, std::unordered_map<g
 
 
 void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList,
-								std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap){
+								std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap,std::set<int> reflectiveTriangles = std::set<int>({8,9})){
 	for( int y = 0 ; y < HEIGHT; y++){
 		for ( int x = 0; x < WIDTH; x++){
 			//Send Ray
-			glm::vec3 raydirection = glm::normalize(calculateDirection(x,y,campos,camrot));
-			RayTriangleIntersection camintersect =  getClosestIntersection(campos,raydirection,list);
+			glm::vec3 start = campos;
+			glm::vec3 raydirection = glm::normalize(calculateDirection(x,y,start,camrot));
+			RayTriangleIntersection camintersect =  getClosestIntersection(start,raydirection,list);
 
 			//If hit
 			if (camintersect.triangleIndex != -1){
@@ -636,6 +633,15 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 				float diffuseIntensity = 0.0;
 				float specularIntensity = 0.0;
 				float visibility = 1.0;
+				if (reflectiveTriangles.find(camintersect.triangleIndex) != reflectiveTriangles.end()){
+					raydirection = camintersect.intersectionPoint-start;
+					raydirection = raydirection - 2.0f * pNormal*(glm::dot(raydirection,pNormal));
+					start = camintersect.intersectionPoint;
+					camintersect = getClosestIntersection(camintersect.intersectionPoint + raydirection*0.01f,raydirection,list);
+					pNormal = camintersect.intersectedTriangle.normal;
+					original = camintersect.intersectedTriangle.colour;
+
+				}
 				for(int i = 0; i < lightList.size(); i++){
 					glm::vec3 lights = lightList[i];
 					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
@@ -648,7 +654,7 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 						
 						lightIntensity += (1/(4*PI*pow(lightintersect.distanceFromCamera,2.0)));
 						diffuseIntensity += glm::dot(pNormal,vectorToLight);
-						specularIntensity += pow(std::max(glm::dot(reflection,glm::normalize(campos-lightintersect.intersectionPoint)),0.0f),256);
+						specularIntensity += pow(std::max(glm::dot(reflection,glm::normalize(start-lightintersect.intersectionPoint)),0.0f),256);
 
 					
 					}	
@@ -662,7 +668,7 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 
 				glm::vec3 colour = glm::vec3(original.red,original.green,original.blue);
 					
-				glm::vec3 resultColor = colour*(diffuseIntensity+ambient)*visibility;
+				glm::vec3 resultColor = colour*(diffuseIntensity+ambient+specularIntensity)*visibility;
 
 				Colour pixel = Colour(std::min(resultColor.x,255.0f),std::min(resultColor.y,255.0f),std::min(resultColor.z,255.0f));
 
@@ -778,7 +784,7 @@ void drawRaytracingGourandCameraView(DrawingWindow &window, glm::vec3 campos, gl
 
 }
 
-void drawRaytracingPhoneCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList,
+void drawRaytracingPhongCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList,
 								std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap){
 	for( int y = 0 ; y < HEIGHT; y++){
 		for ( int x = 0; x < WIDTH; x++){
@@ -789,8 +795,8 @@ void drawRaytracingPhoneCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 			//If hit
 			if (camintersect.triangleIndex != -1){
 				Colour original = camintersect.intersectedTriangle.colour;
-				glm::vec3 pNormal = camintersect.intersectedTriangle.normal;
-				float ambient = 0.0;
+				glm::vec3 pNormal = pointNormal(camintersect,vertexNormalMap);
+				float ambient = 0.2;
 				float lightIntensity = 0.0;
 				float diffuseIntensity = 0.0;
 				float specularIntensity = 0.0;
@@ -798,7 +804,7 @@ void drawRaytracingPhoneCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 				for(int i = 0; i < lightList.size(); i++){
 					glm::vec3 lights = lightList[i];
 					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
-					if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
+					// if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
 						ModelTriangle triangle = lightintersect.intersectedTriangle;
 						glm::vec3 vectorToLight = glm::normalize(lights - lightintersect.intersectionPoint);
 						glm::vec3 vectorFromLight = glm::normalize( lightintersect.intersectionPoint- lights);
@@ -806,11 +812,12 @@ void drawRaytracingPhoneCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 						
 						
 						lightIntensity += (1/(4*PI*pow(lightintersect.distanceFromCamera,2.0)));
-						diffuseIntensity += glm::dot(pNormal,vectorToLight);
+						diffuseIntensity += std::max(glm::dot(pNormal,vectorToLight),0.0f);
 						specularIntensity += pow(std::max(glm::dot(reflection,glm::normalize(campos-lightintersect.intersectionPoint)),0.0f),256);
+						// std::cout << diffuseIntensity << std::endl;
 
 					
-					}	
+					// }	
 				}
 				lightIntensity /= float(lightList.size());
 				diffuseIntensity /= float(lightList.size());
@@ -821,7 +828,7 @@ void drawRaytracingPhoneCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 
 				glm::vec3 colour = glm::vec3(original.red,original.green,original.blue);
 					
-				glm::vec3 resultColor = colour*(diffuseIntensity+ambient)*visibility;
+				glm::vec3 resultColor = colour*(diffuseIntensity+ambient+specularIntensity)*visibility;
 
 				Colour pixel = Colour(std::min(resultColor.x,255.0f),std::min(resultColor.y,255.0f),std::min(resultColor.z,255.0f));
 
@@ -851,6 +858,7 @@ void testReadObj(){
 
 
 void handleEvent(SDL_Event event, DrawingWindow &window) {
+	float angle = 0.1;
 	if (event.type == SDL_KEYDOWN) {
 		if (event.key.keysym.sym == SDLK_LEFT) campos.x-=0.1;
 		else if (event.key.keysym.sym == SDLK_RIGHT) campos.x+=0.1;
@@ -859,26 +867,14 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 		else if (event.key.keysym.sym == SDLK_RIGHTBRACKET)campos.z+=0.1;
 		else if (event.key.keysym.sym == SDLK_LEFTBRACKET)campos.z-=0.1;
 		else if (event.key.keysym.sym == SDLK_p)std::cout << glm::to_string(campos) << std::endl;
-		else if (event.key.keysym.sym == SDLK_o){
-			drawTriangle(generateRandTriangle(),generateRandColour(),window);
-		}
-		else if (event.key.keysym.sym == SDLK_v){
-			doRotation ^= 1;
-		}
-		else if (event.key.keysym.sym == SDLK_i){
-			CanvasTriangle triangle(
-				CanvasPoint(160,10),
-				CanvasPoint(300,230),
-				CanvasPoint(10,150)
-			);
-			triangle.v0().texturePoint = TexturePoint(195,5);
-			triangle.v1().texturePoint = TexturePoint(395,380);
-			triangle.v2().texturePoint = TexturePoint(65,330);
+		else if (event.key.keysym.sym == SDLK_w) camrot = camrot * glm::mat3x3(1,0,0,0,cos(angle),-sin(angle),0,sin(angle),cos(angle));
+		else if (event.key.keysym.sym == SDLK_a) camrot = camrot * glm::mat3x3(cos(-angle),0,sin(-angle),0,1,0,-sin(-angle),0,cos(-angle));
+		else if (event.key.keysym.sym == SDLK_s) camrot = camrot * glm::mat3x3(1,0,0,0,cos(-angle),-sin(-angle),0,sin(-angle),cos(-angle));
+		else if (event.key.keysym.sym == SDLK_d) camrot = camrot * glm::mat3x3(cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
+		else if (event.key.keysym.sym == SDLK_v) doRotation ^= 1;
 
 
 
-			drawFilledTriangle(triangle,window);
-		}
 		else if (event.key.keysym.sym == SDLK_1){
 			state = 0x01;
 		}
@@ -890,6 +886,9 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 		}
 		else if (event.key.keysym.sym == SDLK_4){
 			state = 0x04;
+		}
+		else if (event.key.keysym.sym == SDLK_5){
+			state = 0x05;
 		}
 
 
@@ -906,24 +905,23 @@ int main(int argc, char *argv[]) {
 	SDL_Event event;
 	// drawFilledTriangle(generateRandTriangle(),generateRandColour(),window);
 	std::map<std::string,Colour> mtl = readMtl("src/cornell-box.mtl");
-	// std::vector<ModelTriangle> list = readObj("src/cornell-box.obj",mtl,0.35);
-	std::vector<ModelTriangle> list = readObj("src/ball.obj",mtl,0.5);
+	std::vector<ModelTriangle> list = readObj("src/cornell-box.obj",mtl,0.35);
+	// std::vector<ModelTriangle> list = readObj("src/ball.obj",mtl,0.5);
 
 	calculateNormal(list);
 	auto vertexTriangleMap = calculateVertexTriangleMap(list);
 	std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap = calculateVertexNormalMap(vertexTriangleMap);
 	state = 0x03;
 
-	campos = glm::vec3(0.000000, 0.800000, 2.200002);
-	// campos = glm::vec3(0, 0, 4);
+	// campos = glm::vec3(0.000000, 0.800000, 2.200002);
+	campos = glm::vec3(0, 0, 4);
 
 	float angle = 0.1;
 	// glm::mat3x3 rot(cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
-	glm::vec3 light(0,0,2);
-	glm::vec3 shift(0,2,0);
+	glm::vec3 light(0,0.5,0.5);
+	glm::vec3 shift(0,0,0);
 	while (true) {
 		// angle += 0.001;
-		glm::mat3 rot(1,0,0,0,-1,0,0,0,1);
 		// glm::mat3x3 rot(cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
 		glm::mat3x3 rotpos (cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
 		// campos = campos*rotpos;
@@ -940,23 +938,31 @@ int main(int argc, char *argv[]) {
 		if (window.pollForInputEvents(event)) handleEvent(event, window);
 		
 		if (state == 0x01){	
-			drawRasterizedCameraView(window,campos,rot,list);
+			drawRasterizedCameraView(window,campos,camrot,list);
 		}
 		if (state == 0x02){
-			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
-			if (doRotation)light =light*rotpos;
-			std::vector<glm::vec3> lights = {light+shift};
-			drawRaytracingCameraView(window,campos,rot,list ,lights,vertexNormalMap);
+			drawWireFrameCameraView(window,campos,camrot,list);
 		}
 		if (state == 0x03){
 			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
 			if (doRotation)light =light*rotpos;
 			std::vector<glm::vec3> lights = {light+shift};
-			drawRaytracingGourandCameraView(window,campos,rot,list ,lights,vertexNormalMap);
+			drawRaytracingCameraView(window,campos,camrot,list ,lights,vertexNormalMap);
 		}
 		if (state == 0x04){
-			drawWireFrameCameraView(window,campos,rot,list);
+			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
+			if (doRotation)light =light*rotpos;
+			std::vector<glm::vec3> lights = {light+shift};
+			drawRaytracingGourandCameraView(window,campos,camrot,list ,lights,vertexNormalMap);
 		}
+		if (state == 0x05){
+			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
+			if (doRotation)light =light*rotpos;
+			std::vector<glm::vec3> lights = {light+shift};
+			drawRaytracingPhongCameraView(window,campos,camrot,list ,lights,vertexNormalMap);
+		}
+		
+		
 		
 		
 
