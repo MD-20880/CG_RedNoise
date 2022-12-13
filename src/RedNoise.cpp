@@ -17,10 +17,12 @@
 #include "RayTriangleIntersection.h"
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/hash.hpp>
+#include <sstream>
 
 #define WIDTH 320
 #define HEIGHT 240
 #define PI 3.14
+
 
 struct Camera {
 	glm::vec3 campos;
@@ -108,7 +110,7 @@ std::unordered_map<glm::vec3,std::vector<ModelTriangle>> calculateVertexTriangle
 
 std::unordered_map<glm::vec3, glm::vec3> calculateVertexNormalMap(std::unordered_map<glm::vec3,std::vector<ModelTriangle>> vertexTriangleMap){
 	std::unordered_map<glm::vec3, glm::vec3> result;
-	for (auto &element : vertexTriangleMap){
+	for (auto element : vertexTriangleMap){
 		glm::vec3 vertexNorm(0,0,0);
 		for (ModelTriangle triangle: element.second){
 			vertexNorm += triangle.normal;
@@ -613,10 +615,15 @@ glm::vec3 pointNormal(RayTriangleIntersection intersection, std::unordered_map<g
 	return glm::normalize(vertexNormal);
 
 }	
-
+Colour getColour(uint32_t colour){
+	int r = (colour >> 16) & 0xff; // red
+ 	int g = (colour >> 8) & 0xff; // green
+ 	int b = colour  & 0xff; // blue
+	return Colour(r,g,b);
+}
 
 void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3x3 camrot, std::vector<ModelTriangle> list, std::vector<glm::vec3> lightList,
-								std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap,std::set<int> reflectiveTriangles = std::set<int>({8,9})){
+								std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap,TextureMap tmap = TextureMap(),std::set<int> reflectiveTriangles = std::set<int>({8,9})){
 	for( int y = 0 ; y < HEIGHT; y++){
 		for ( int x = 0; x < WIDTH; x++){
 			//Send Ray
@@ -626,13 +633,16 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 
 			//If hit
 			if (camintersect.triangleIndex != -1){
+				
 				Colour original = camintersect.intersectedTriangle.colour;
+				
 				glm::vec3 pNormal = camintersect.intersectedTriangle.normal;
 				float ambient = 0.0;
 				float lightIntensity = 0.0;
 				float diffuseIntensity = 0.0;
 				float specularIntensity = 0.0;
 				float visibility = 1.0;
+
 				if (reflectiveTriangles.find(camintersect.triangleIndex) != reflectiveTriangles.end()){
 					raydirection = camintersect.intersectionPoint-start;
 					raydirection = raydirection - 2.0f * pNormal*(glm::dot(raydirection,pNormal));
@@ -640,16 +650,25 @@ void drawRaytracingCameraView(DrawingWindow &window, glm::vec3 campos, glm::mat3
 					camintersect = getClosestIntersection(camintersect.intersectionPoint + raydirection*0.01f,raydirection,list);
 					pNormal = camintersect.intersectedTriangle.normal;
 					original = camintersect.intersectedTriangle.colour;
+				}
 
+				//Check Texture, If Texture Exist, Replace
+				ModelTriangle t = camintersect.intersectedTriangle;
+				if(t.texturePoints.size() > 0 && t.texturePoints[0].x != 0 && t.texturePoints[0].y != 0){
+					glm::vec2 t0 = glm::vec2(t.texturePoints[1].x,t.texturePoints[1].y) - glm::vec2(t.texturePoints[0].x,t.texturePoints[0].y);
+					glm::vec2 t1 = glm::vec2(t.texturePoints[2].x,t.texturePoints[2].y) - glm::vec2(t.texturePoints[0].x,t.texturePoints[0].y);
+					glm::vec2 pos = glm::vec2(t.texturePoints[0].x,t.texturePoints[0].y) + camintersect.possibleSolution.y*glm::vec2(t.texturePoints[1].x,t.texturePoints[1].y) + camintersect.possibleSolution.z*glm::vec2(t.texturePoints[2].x,t.texturePoints[2].y);
+					original = getColour(tmap.pixels[tmap.width*round(pos.y) + round(pos.x)]);
 				}
 				for(int i = 0; i < lightList.size(); i++){
 					glm::vec3 lights = lightList[i];
 					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
-					if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
+					// if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
+					if (lightintersect.triangleIndex == camintersect.triangleIndex){
 						ModelTriangle triangle = lightintersect.intersectedTriangle;
 						glm::vec3 vectorToLight = glm::normalize(lights - lightintersect.intersectionPoint);
 						glm::vec3 vectorFromLight = glm::normalize( lightintersect.intersectionPoint- lights);
-						glm::vec3 reflection = vectorFromLight- 2.0f * pNormal*(glm::dot(vectorFromLight,pNormal));
+						glm::vec3 reflection = vectorFromLight - 2.0f * pNormal*(glm::dot(vectorFromLight,pNormal));
 						
 						
 						lightIntensity += (1/(4*PI*pow(lightintersect.distanceFromCamera,2.0)));
@@ -741,38 +760,21 @@ void drawRaytracingGourandCameraView(DrawingWindow &window, glm::vec3 campos, gl
 
 			//If hit
 			if (camintersect.triangleIndex != -1){
-				Colour original = camintersect.intersectedTriangle.colour;
-				glm::vec3 pNormal = camintersect.intersectedTriangle.normal;
-				float ambient = 0.0;
-				float visibility = 1.0;
-				
 				std::vector<glm::vec3> vertexValue;
-				if (triangleVertexColourMap.find(camintersect.triangleIndex) != triangleVertexColourMap.end()){
-					vertexValue = triangleVertexColourMap[camintersect.triangleIndex];
-				}else{
-					vertexValue = gs_calculate_vertex_value(camintersect.intersectedTriangle,campos,list,lightList,vertexNormalMap);
-					triangleVertexColourMap[camintersect.triangleIndex] = vertexValue;
-				}
+				vertexValue = gs_calculate_vertex_value(camintersect.intersectedTriangle,campos,list,lightList,vertexNormalMap);
+
+				// if (triangleVertexColourMap.find(camintersect.triangleIndex) != triangleVertexColourMap.end()){
+				// 	vertexValue = triangleVertexColourMap[camintersect.triangleIndex];
+				// }else{
+				// 	vertexValue = gs_calculate_vertex_value(camintersect.intersectedTriangle,campos,list,lightList,vertexNormalMap);
+				// 	triangleVertexColourMap[camintersect.triangleIndex] = vertexValue;
+				// }
 
 				glm::vec3 colour(0,0,0);
-				for(int i = 0; i < lightList.size(); i++){
-					
-					glm::vec3 lights = lightList[i];
-					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
-					
-					glm::vec3 colourE0 = vertexValue[1] - vertexValue[0];
-					glm::vec3 colourE1 = vertexValue[2] - vertexValue[0];
+				glm::vec3 colourE0 = vertexValue[1] - vertexValue[0];
+				glm::vec3 colourE1 = vertexValue[2] - vertexValue[0];
 
-
-					colour = vertexValue[0] + colourE0*camintersect.possibleSolution.y + colourE1*camintersect.possibleSolution.z;
-	
-					
-				}
-				
-				#ifdef DEBUG
-					std::cout << "[gs_calculate_vertex_value] Done" << std::endl;
-				#endif // DEBUG
-		
+				colour = vertexValue[0] + colourE0*camintersect.possibleSolution.y + colourE1*camintersect.possibleSolution.z;
 				glm::vec3 resultColor = colour;
 
 				Colour pixel = Colour(std::min(resultColor.x,255.0f),std::min(resultColor.y,255.0f),std::min(resultColor.z,255.0f));
@@ -804,7 +806,7 @@ void drawRaytracingPhongCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 				for(int i = 0; i < lightList.size(); i++){
 					glm::vec3 lights = lightList[i];
 					RayTriangleIntersection lightintersect = getClosestIntersection(lights,camintersect.intersectionPoint-lights,list);
-					// if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
+					if(equalPoint(lightintersect.intersectionPoint, camintersect.intersectionPoint,0.001)){
 						ModelTriangle triangle = lightintersect.intersectedTriangle;
 						glm::vec3 vectorToLight = glm::normalize(lights - lightintersect.intersectionPoint);
 						glm::vec3 vectorFromLight = glm::normalize( lightintersect.intersectionPoint- lights);
@@ -817,7 +819,7 @@ void drawRaytracingPhongCameraView(DrawingWindow &window, glm::vec3 campos, glm:
 						// std::cout << diffuseIntensity << std::endl;
 
 					
-					// }	
+					}	
 				}
 				lightIntensity /= float(lightList.size());
 				diffuseIntensity /= float(lightList.size());
@@ -911,6 +913,13 @@ int main(int argc, char *argv[]) {
 	calculateNormal(list);
 	auto vertexTriangleMap = calculateVertexTriangleMap(list);
 	std::unordered_map<glm::vec3,glm::vec3> vertexNormalMap = calculateVertexNormalMap(vertexTriangleMap);
+	TextureMap tmap = TextureMap("./src/texture.ppm");
+
+
+	//Add texture to Triangle (6,7 Floor)
+	list[2].texturePoints = {TexturePoint(195, 5),TexturePoint(395, 380),TexturePoint(65, 330)};
+	
+
 	state = 0x03;
 
 	// campos = glm::vec3(0.000000, 0.800000, 2.200002);
@@ -920,6 +929,7 @@ int main(int argc, char *argv[]) {
 	// glm::mat3x3 rot(cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
 	glm::vec3 light(0,0.5,0.5);
 	glm::vec3 shift(0,0,0);
+	int frame = 0;
 	while (true) {
 		// angle += 0.001;
 		// glm::mat3x3 rot(cos(angle),0,sin(angle),0,1,0,-sin(angle),0,cos(angle));
@@ -947,7 +957,7 @@ int main(int argc, char *argv[]) {
 			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
 			if (doRotation)light =light*rotpos;
 			std::vector<glm::vec3> lights = {light+shift};
-			drawRaytracingCameraView(window,campos,camrot,list ,lights,vertexNormalMap);
+			drawRaytracingCameraView(window,campos,camrot,list ,lights,vertexNormalMap,tmap);
 		}
 		if (state == 0x04){
 			// std::vector<glm::vec3> lights = {glm::vec3(-0.4,0.7,0.9),glm::vec3(0.5,1.5,1)};
@@ -974,5 +984,12 @@ int main(int argc, char *argv[]) {
 		dbuffer = makedBuffer();
 		pbuffer = makepBuffer();
 		window.renderFrame();
+		// std::ostringstream fns;
+		// fns << std::setfill('0') << std::setw(5) << frame;
+		// std::cout << fns.str() << std::endl;
+		// std::string filename = "./out/"+fns.str() + ".ppm";
+		// window.savePPM(filename);
+		// frame++;
+		
 	}
 }
